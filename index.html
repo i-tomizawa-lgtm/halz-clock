@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HALZ Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#1F4E79}
+  body{font-family:"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho",serif;color:#fff}
+  .wrap{position:relative;height:100%;display:flex;align-items:center;justify-content:center;
+    background-size:cover;background-position:center}
+  .shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,40,70,.15),rgba(15,40,70,var(--ov)) 30%,rgba(15,40,70,var(--ov)) 70%,rgba(15,40,70,.15))}
+  .box{position:relative;text-align:center;padding:8px 24px;max-width:92%}
+  .date{font-size:clamp(13px,4.2vh,22px);letter-spacing:.12em;opacity:.95}
+  .time{font-size:clamp(34px,22vh,92px);font-weight:700;line-height:1.1;letter-spacing:.04em;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px rgba(0,0,0,.25)}
+  .line{width:64px;height:2px;background:#9CC3E8;margin:6px auto 10px}
+  .msg{font-size:clamp(11px,3.6vh,16px);line-height:1.6;opacity:.95}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><div class="shade"></div>
+  <div class="box">
+    <div class="date" id="date"></div>
+    <div class="time" id="time"></div>
+    <div class="line"></div>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script>
+  const C = window.HALZ_CLOCK_CONFIG || {};
+  const wrap = document.getElementById('wrap');
+  wrap.style.backgroundImage = `url("${C.background || 'bg.jpg'}")`;
+  document.documentElement.style.setProperty('--ov', C.overlay ?? 0.45);
+  const W = ['日','月','火','水','木','金','土'];
+  const pad = n => String(n).padStart(2,'0');
+  function tick(){
+    // 日本時間で表示
+    const now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Tokyo'}));
+    document.getElementById('date').textContent =
+      `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${W[now.getDay()]}）`;
+    document.getElementById('time').textContent =
+      `${pad(now.getHours())}:${pad(now.getMinutes())}` + (C.showSeconds===false ? '' : `:${pad(now.getSeconds())}`);
+    const list = C.messages && C.messages.length ? C.messages : [''];
+    const day = Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000);
+    document.getElementById('msg').textContent = list[day % list.length];
+  }
+  tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>
