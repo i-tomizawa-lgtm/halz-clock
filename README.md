@@ -5,7 +5,7 @@ Notionのポータルに埋め込む、日付・時刻・ひとことを表示�
 ## 中身
 - `index.html` … 本体（ふだんは触らない）
 - `config.js` … 背景・ひとこと・秒の表示の設定（ここだけ書き換える）
-- `bg.jpg` … 背景の写真（Unsplashの無料写真）
+- `bg.jpg`・`bg2.jpg` … 背景の写真（Unsplashの無料写真）
 
 ## よくある変更
 - **ひとことを変える**：`config.js` の `messages` の行を書き換える。1日ごとに上から順番に切り替わる。
@@ -13,6 +13,11 @@ Notionのポータルに埋め込む、日付・時刻・ひとことを表示�
 - **文字が読みにくい**：`overlay` を大きくする（例：0.45 → 0.6）。
 
 GitHubの画面でファイルを開き、鉛筆マークで編集して「Commit changes」を押すと、数分でNotionの表示にも反映されます。
+
+## URLでの切り替え
+- `?title=HALZ` … 時刻の上に大きく「HALZ」を出す
+- `?bg=bg2.jpg` … 背景をこのフォルダの別の画像にする（config.jsより優先）
+- 例：`https://<アカウント名>.github.io/halz-clock/?title=HALZ&bg=bg.jpg`
 
 ## Notionへの貼り方
 Notionで `/embed` と入力し、公開されたページのURL（例：`https://<アカウント名>.github.io/halz-clock/`）を貼る。
