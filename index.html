@@ -18,10 +18,33 @@
   .time{font-size:clamp(34px,22vh,92px);font-weight:700;line-height:1.1;letter-spacing:.04em;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px rgba(0,0,0,.25)}
   .line{width:64px;height:2px;background:#9CC3E8;margin:6px auto 10px}
   .msg{font-size:clamp(11px,3.6vh,16px);line-height:1.6;opacity:.95}
+  .wx{position:absolute;left:0;right:0;bottom:6%;text-align:center;font-size:clamp(11px,3.8vh,17px);line-height:1.5;letter-spacing:.04em;opacity:.97;font-variant-numeric:tabular-nums;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+  /* 天気ごとの背景の雰囲気（写真の上に色と動きを重ねる） */
+  .bg{position:absolute;inset:0;background-size:cover;background-position:center;transition:filter 1s}
+  .w-sunny .bg{filter:saturate(1.15) brightness(1.08)}
+  .w-cloudy .bg{filter:saturate(.35) brightness(.92)}
+  .w-rain .bg{filter:saturate(.45) brightness(.78)}
+  .w-snow .bg{filter:saturate(.3) brightness(1.02)}
+  .tint{position:absolute;inset:0;pointer-events:none;transition:background 1s}
+  .w-sunny .tint{background:linear-gradient(180deg,rgba(255,196,110,.28),rgba(255,160,80,.05) 60%)}
+  .w-cloudy .tint{background:linear-gradient(180deg,rgba(180,190,200,.45),rgba(120,130,145,.15))}
+  .w-rain .tint{background:linear-gradient(180deg,rgba(40,60,90,.45),rgba(20,35,60,.25))}
+  .w-snow .tint{background:linear-gradient(180deg,rgba(230,240,255,.35),rgba(200,215,235,.1))}
+  .fx{position:absolute;inset:-20% 0 0 0;pointer-events:none;opacity:0;transition:opacity 1s}
+  .w-rain .fx.rain{opacity:.55;background-image:repeating-linear-gradient(105deg,rgba(255,255,255,.0) 0 7px,rgba(220,235,255,.55) 7px 8px,rgba(255,255,255,0) 8px 23px);background-size:140px 140px;animation:fall .45s linear infinite}
+  .w-snow .fx.snow{opacity:.9;background-image:radial-gradient(2px 2px at 20px 30px,#fff,transparent),radial-gradient(2.5px 2.5px at 80px 90px,#fff,transparent),radial-gradient(1.5px 1.5px at 130px 50px,#fff,transparent),radial-gradient(2px 2px at 170px 140px,#fff,transparent);background-size:200px 200px;animation:fall 6s linear infinite}
+  .w-cloudy .fx.cloud{opacity:.5;background:radial-gradient(60% 35% at 20% 15%,rgba(255,255,255,.55),transparent 70%),radial-gradient(55% 30% at 75% 10%,rgba(255,255,255,.45),transparent 70%);animation:drift 40s ease-in-out infinite alternate}
+  .w-sunny .fx.sun{opacity:.8;background:radial-gradient(35% 45% at 88% 8%,rgba(255,235,170,.65),transparent 70%)}
+  @keyframes fall{from{background-position:0 0}to{background-position:-40px 140px}}
+  @keyframes drift{from{transform:translateX(-4%)}to{transform:translateX(4%)}}
+  @media (prefers-reduced-motion:reduce){.fx{animation:none!important}}
+  .wx .ic{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;margin-right:.25em}
+  .wx .sub{opacity:.85}
 </style>
 </head>
 <body>
-<div class="wrap" id="wrap"><div class="shade"></div>
+<div class="wrap" id="wrap"><div class="bg" id="bg"></div><div class="shade"></div><div class="tint"></div>
+  <div class="fx rain"></div><div class="fx snow"></div><div class="fx cloud"></div><div class="fx sun"></div>
   <div class="box">
     <div class="brand" id="brand" hidden></div>
     <div class="date" id="date"></div>
@@ -29,6 +52,7 @@
     <div class="line"></div>
     <div class="msg" id="msg"></div>
   </div>
+  <div class="wx" id="wx" hidden></div>
 </div>
 <script src="config.js"></script>
 <script>
@@ -38,7 +62,8 @@
   if (Q.get('bg')) C.background = Q.get('bg');
   if (Q.get('title')) { const b=document.getElementById('brand'); b.textContent=Q.get('title'); b.hidden=false; }
   const wrap = document.getElementById('wrap');
-  wrap.style.backgroundImage = `url("${C.background || 'bg.jpg'}")`;
+  const bgEl = document.getElementById('bg');
+  bgEl.style.backgroundImage = `url("${C.background || 'bg.jpg'}")`;
   document.documentElement.style.setProperty('--ov', C.overlay ?? 0.45);
   const W = ['日','月','火','水','木','金','土'];
   const pad = n => String(n).padStart(2,'0');
@@ -54,6 +79,47 @@
     document.getElementById('msg').textContent = list[day % list.length];
   }
   tick(); setInterval(tick, 1000);
+
+  // ===== 天気（Open-Meteo：登録・キー不要の無料の天気API） =====
+  // ?weather=shinjuku のように地点を指定すると、下に天気を出し、背景の雰囲気も天気に合わせる
+  // ?msg=1 でひとことも出す／?fx=off で背景は変えない／?wx=rain などで見た目だけ確認できる
+  const PLACES = {
+    shinjuku: { name: '新宿', lat: 35.6938, lon: 139.7034 },
+    ishigaki: { name: '石垣島', lat: 24.3448, lon: 124.1572 },
+  };
+  const WX = c => c === 0 ? ['☀️','晴れ'] : c <= 2 ? ['🌤️','晴れ時々くもり'] : c === 3 ? ['☁️','くもり']
+    : c <= 48 ? ['🌫️','霧'] : c <= 57 ? ['🌦️','霧雨'] : c <= 67 ? ['🌧️','雨'] : c <= 77 ? ['🌨️','雪']
+    : c <= 82 ? ['🌦️','にわか雨'] : c <= 86 ? ['🌨️','にわか雪'] : ['⛈️','雷雨'];
+  const placeKey = Q.get('weather') || C.weather;
+  async function weather(){
+    const p = PLACES[placeKey]; if (!p) return;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}` +
+      '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+      '&timezone=Asia%2FTokyo&forecast_days=1';
+    try {
+      const d = await (await fetch(url)).json();
+      const force = { sunny: 0, cloudy: 3, rain: 63, snow: 73 }[Q.get('wx')];
+      if (force !== undefined) d.current.weather_code = force;   // 見た目の確認用
+      const [ic, label] = WX(d.current.weather_code);
+      const r = Math.round;
+      const el = document.getElementById('wx');
+      el.innerHTML = `<span class="ic">${ic}</span>${p.name}　${label}　${r(d.current.temperature_2m)}℃` +
+        `<br><span class="sub">最高 ${r(d.daily.temperature_2m_max[0])}℃ ／ 最低 ${r(d.daily.temperature_2m_min[0])}℃ ／ 降水 ${d.daily.precipitation_probability_max[0]}%</span>`;
+      el.hidden = false;
+      // 天気が出ているときは、ひとことは出さない（?msg=1 で出す）
+      if (Q.get('msg') !== '1') document.getElementById('msg').hidden = true;
+      // 背景の雰囲気を天気に合わせる（?fx=off で変えない）
+      if (Q.get('fx') !== 'off') {
+        const c = d.current.weather_code;
+        const kind = c <= 1 ? 'sunny' : c <= 48 ? 'cloudy' : (c >= 71 && c <= 77) || (c >= 85 && c <= 86) ? 'snow' : 'rain';
+        wrap.classList.remove('w-sunny','w-cloudy','w-rain','w-snow');
+        wrap.classList.add('w-' + kind);
+        // 天気ごとの写真を config.js で指定していれば差し替える（例：backgrounds:{rain:'bg_rain.jpg'}）
+        if (C.backgrounds && C.backgrounds[kind]) bgEl.style.backgroundImage = `url("${C.backgrounds[kind]}")`;
+      }
+    } catch (e) { /* 取れないときは何も出さない（時計はそのまま動く） */ }
+  }
+  weather(); setInterval(weather, 30 * 60 * 1000);   // 30分ごとに更新
 </script>
 </body>
 </html>
