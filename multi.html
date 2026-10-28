@@ -18,20 +18,22 @@
   .line{width:56px;height:2px;background:#9CC3E8;margin:4px auto 8px}
   .ic{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
   /* A：順番に切り替え */
-  .one{position:relative;font-size:clamp(11px,3.8vh,17px);line-height:1.5;text-align:center;min-height:3em;transition:opacity .4s;text-shadow:0 1px 6px rgba(0,0,0,.35)}
-  .one .sub{opacity:.85;font-size:.9em}
+  .one{position:relative;font-size:clamp(13px,5.2vh,22px);line-height:1.45;text-align:center;min-height:2.9em;transition:opacity .4s;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+  .one .sub{opacity:.9;font-size:.88em}
+  .one .now{font-weight:700}
   .one.fade{opacity:0}
   /* C：押して選ぶ */
-  .chips{position:relative;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-top:6px;padding:0 6px}
-  .chip{font:inherit;font-size:clamp(10px,3vh,13px);color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:1px 9px;cursor:pointer}
+  .chips{position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;padding:0 6px}
+  .chip{font:inherit;font-size:clamp(12px,4.2vh,17px);color:#fff;background:rgba(15,40,70,.45);border:1px solid rgba(255,255,255,.5);border-radius:999px;padding:3px 8px;cursor:pointer;line-height:1.3}
+  .chip:hover{background:rgba(255,255,255,.22)}
   .chip.on{background:#fff;color:#1F4E79;border-color:#fff;font-weight:700}
   .chip:focus-visible{outline:2px solid #9CC3E8;outline-offset:1px}
   /* B：一覧 */
   .grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;font-size:clamp(10px,3.4vh,15px);line-height:1.45;font-variant-numeric:tabular-nums;text-shadow:0 1px 6px rgba(0,0,0,.35)}
   .grid div{white-space:nowrap}
   .grid .t{opacity:.9}
-  .src{position:absolute;right:6px;bottom:3px;font-size:9px;opacity:.6;font-family:sans-serif}
-  .hint{position:relative;font-size:clamp(9px,2.6vh,11px);opacity:.7;margin-top:3px;font-family:sans-serif}
+  .pin{font-size:.75em;opacity:.8;margin-left:.4em}
+  .mode-tap .wrap{padding-bottom:46px;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -42,7 +44,7 @@
     <div class="line"></div>
   </div>
   <div id="panel" style="position:relative"></div>
-  <div class="src">出典：気象庁</div>
+  <div id="chips"></div>
 </div>
 <script>
 /* 拠点の天気（試作）
@@ -50,17 +52,18 @@
    ?mode=tap    … C：Aに加えて、拠点の名前を押すとその拠点で止まる（もう一度押すと再開）
    ?mode=list   … B：全部の拠点を一覧で表示
    ?bg=bg2.jpg  … 背景の写真
-   天気は気象庁の天気予報（府県ごと）から。30分ごとに読み直す */
+   天気・最高気温・降水確率は気象庁の天気予報（府県ごと）、現在の気温・最低気温はアメダスの観測から。10分ごとに読み直す */
 const Q = new URLSearchParams(location.search);
 const MODE = Q.get('mode') || 'tap';
+document.body.classList.add('mode-' + MODE);
 document.getElementById('bg').style.backgroundImage = `url("${Q.get('bg') || 'bg2.jpg'}")`;
 const PLACES = [
-  { key:'shinjuku',  name:'新宿',   office:'130000', area:'東京地方',   station:'東京' },
-  { key:'osaka',     name:'大阪',   office:'270000', area:'大阪府',     station:'大阪' },
-  { key:'nagoya',    name:'名古屋', office:'230000', area:'西部',       station:'名古屋' },
-  { key:'kanazawa',  name:'金沢',   office:'170000', area:'加賀',       station:'金沢' },
-  { key:'hamamatsu', name:'浜松',   office:'220000', area:'西部',       station:'浜松' },
-  { key:'ishigaki',  name:'石垣島', office:'474000', area:'石垣島地方', station:'石垣島' },
+  { key:'shinjuku',  name:'新宿',   office:'130000', area:'東京地方',   station:'東京',   amedas:'44132' },
+  { key:'osaka',     name:'大阪',   office:'270000', area:'大阪府',     station:'大阪',   amedas:'62078' },
+  { key:'nagoya',    name:'名古屋', office:'230000', area:'西部',       station:'名古屋', amedas:'51106' },
+  { key:'kanazawa',  name:'金沢',   office:'170000', area:'加賀',       station:'金沢',   amedas:'56227' },
+  { key:'hamamatsu', name:'浜松',   office:'220000', area:'西部',       station:'浜松',   amedas:'50456' },
+  { key:'ishigaki',  name:'石垣島', office:'474000', area:'石垣島地方', station:'石垣島', amedas:'94081' },
 ].filter(p => !Q.get('places') || Q.get('places').split(',').includes(p.key));
 
 const W = ['日','月','火','水','木','金','土'], pad = n => String(n).padStart(2,'0');
@@ -93,7 +96,32 @@ async function load(){
       });
     } catch (e) { /* 取れない拠点は表示しない */ }
   }));
+  await loadAmedas();
   render();
+}
+
+/* アメダス：今日0時からの観測（3時間ごとのファイル）から、現在の気温と今日の最低・最高を出す */
+const JMA = 'https://www.jma.go.jp/bosai/amedas/data/';
+async function loadAmedas(){
+  try {
+    const latest = new Date((await (await fetch(JMA + 'latest_time.txt')).text()).trim());
+    const j = new Date(latest.getTime() + 9 * 3600e3);
+    const day = `${j.getUTCFullYear()}${pad(j.getUTCMonth()+1)}${pad(j.getUTCDate())}`;
+    const hours = []; for (let h = 0; h <= j.getUTCHours(); h += 3) hours.push(pad(h));
+    await Promise.all(PLACES.map(async p => {
+      const temps = [];
+      await Promise.all(hours.map(async h => {
+        try {
+          const d = await (await fetch(`${JMA}point/${p.amedas}/${day}_${h}.json`)).json();
+          Object.keys(d).forEach(k => { const t = d[k].temp; if (t && t[1] === 0 && t[0] != null) temps.push([k, t[0]]); });
+        } catch (e) {}
+      }));
+      if (!temps.length) return;
+      temps.sort((a, b) => a[0] < b[0] ? -1 : 1);
+      const v = temps.map(x => x[1]);
+      DATA[p.key] = Object.assign(DATA[p.key] || {}, { now: temps[temps.length - 1][1], obsMin: Math.min(...v), obsMax: Math.max(...v) });
+    }));
+  } catch (e) { /* 観測が取れないときは予報だけ出す */ }
 }
 
 const panel = document.getElementById('panel');
@@ -101,26 +129,31 @@ let idx = 0, pinned = null;
 function lineFor(p){
   const d = DATA[p.key]; if (!d) return `${p.name}　—`;
   const [ic, label] = ICON(d.code);
-  return `<span class="ic">${ic}</span> ${p.name}　${label}　最高 ${d.max}℃<br><span class="sub">${d.pop!=null?`降水 ${d.pop}%`:''}</span>`;
+  const r = n => Math.round(Number(n));
+  // 最高：予報の最高と、ここまでの観測の最高の高いほう
+  const hi = [d.max, d.obsMax].filter(x => x != null && x !== '').map(Number);
+  const parts = [];
+  if (hi.length) parts.push(`最高 ${r(Math.max(...hi))}℃`);
+  if (d.obsMin != null) parts.push(`最低 ${r(d.obsMin)}℃`);
+  if (d.pop != null) parts.push(`降水 ${d.pop}%`);
+  return `<span class="ic">${ic}</span> ${p.name}　${label}　<b class="now">${d.now != null ? d.now.toFixed(1) + '℃' : ''}</b>${pinned!=null?'<span class="pin">（固定中）</span>':''}<br><span class="sub">${parts.join(' ／ ')}</span>`;
 }
 function render(){
   if (MODE === 'list') {
     panel.innerHTML = '<div class="grid">' + PLACES.map(p => {
       const d = DATA[p.key]; const ic = d ? ICON(d.code)[0] : '・';
-      return `<div><span class="ic">${ic}</span> ${p.name} <span class="t">${d ? d.max + '℃' : '—'}</span></div>`;
+      return `<div><span class="ic">${ic}</span> ${p.name} <span class="t">${d && d.now != null ? d.now.toFixed(1) + '℃' : d ? d.max + '℃' : '—'}</span></div>`;
     }).join('') + '</div>';
     return;
   }
   const p = PLACES[pinned ?? idx];
-  let html = `<div class="one" id="one">${lineFor(p)}</div>`;
+  panel.innerHTML = `<div class="one" id="one">${lineFor(p)}</div>`;
   if (MODE === 'tap') {
-    html += '<div class="chips">' + PLACES.map((q, i) =>
-      `<button class="chip${i === (pinned ?? idx) ? ' on' : ''}" data-i="${i}" aria-pressed="${i === pinned}">${q.name}</button>`).join('') + '</div>';
-    html += `<div class="hint">${pinned != null ? 'もう一度押すと自動の切り替えに戻ります' : '名前を押すとその拠点で止まります'}</div>`;
+    document.getElementById('chips').innerHTML = '<div class="chips">' + PLACES.map((q, i) =>
+      `<button class="chip${i === (pinned ?? idx) ? ' on' : ''}" data-i="${i}" aria-pressed="${i === pinned}" title="${i === pinned ? 'もう一度押すと自動の切り替えに戻ります' : 'この拠点で止めます'}">${q.name}</button>`).join('') + '</div>';
   }
-  panel.innerHTML = html;
 }
-panel.addEventListener('click', e => {
+document.getElementById('chips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if (!b) return;
   const i = Number(b.dataset.i);
   pinned = pinned === i ? null : i;
@@ -132,7 +165,7 @@ setInterval(() => {
   const one = document.getElementById('one'); if (one) one.classList.add('fade');
   setTimeout(() => { idx = (idx + 1) % PLACES.length; render(); }, 400);
 }, 5000);
-load(); setInterval(load, 30 * 60 * 1000);
+load(); setInterval(load, 10 * 60 * 1000);
 </script>
 </body>
 </html>
