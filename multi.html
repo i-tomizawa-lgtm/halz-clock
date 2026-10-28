@@ -32,7 +32,6 @@
   .grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;font-size:clamp(10px,3.4vh,15px);line-height:1.45;font-variant-numeric:tabular-nums;text-shadow:0 1px 6px rgba(0,0,0,.35)}
   .grid div{white-space:nowrap}
   .grid .t{opacity:.9}
-  .pin{font-size:.75em;opacity:.8;margin-left:.4em}
   .mode-tap .wrap{padding-bottom:46px;box-sizing:border-box}
 </style>
 </head>
@@ -49,7 +48,7 @@
 <script>
 /* 拠点の天気（試作）
    ?mode=rotate … A：5秒ごとに拠点を順番に切り替え
-   ?mode=tap    … C：Aに加えて、拠点の名前を押すとその拠点で止まる（もう一度押すと再開）
+   ?mode=tap    … C：Aに加えて、下の拠点の名前を押すとその拠点を表示（そこからまた順番に切り替え）
    ?mode=list   … B：全部の拠点を一覧で表示
    ?bg=bg2.jpg  … 背景の写真
    天気・最高気温・降水確率は気象庁の天気予報（府県ごと）、現在の気温・最低気温はアメダスの観測から。10分ごとに読み直す */
@@ -125,7 +124,7 @@ async function loadAmedas(){
 }
 
 const panel = document.getElementById('panel');
-let idx = 0, pinned = null;
+let idx = 0, timer = null;
 function lineFor(p){
   const d = DATA[p.key]; if (!d) return `${p.name}　—`;
   const [ic, label] = ICON(d.code);
@@ -136,7 +135,7 @@ function lineFor(p){
   if (hi.length) parts.push(`最高 ${r(Math.max(...hi))}℃`);
   if (d.obsMin != null) parts.push(`最低 ${r(d.obsMin)}℃`);
   if (d.pop != null) parts.push(`降水 ${d.pop}%`);
-  return `<span class="ic">${ic}</span> ${p.name}　${label}　<b class="now">${d.now != null ? d.now.toFixed(1) + '℃' : ''}</b>${pinned!=null?'<span class="pin">（固定中）</span>':''}<br><span class="sub">${parts.join(' ／ ')}</span>`;
+  return `<span class="ic">${ic}</span> ${p.name}　${label}　<b class="now">${d.now != null ? d.now.toFixed(1) + '℃' : ''}</b><br><span class="sub">${parts.join(' ／ ')}</span>`;
 }
 function render(){
   if (MODE === 'list') {
@@ -146,25 +145,28 @@ function render(){
     }).join('') + '</div>';
     return;
   }
-  const p = PLACES[pinned ?? idx];
+  const p = PLACES[idx];
   panel.innerHTML = `<div class="one" id="one">${lineFor(p)}</div>`;
   if (MODE === 'tap') {
     document.getElementById('chips').innerHTML = '<div class="chips">' + PLACES.map((q, i) =>
-      `<button class="chip${i === (pinned ?? idx) ? ' on' : ''}" data-i="${i}" aria-pressed="${i === pinned}" title="${i === pinned ? 'もう一度押すと自動の切り替えに戻ります' : 'この拠点で止めます'}">${q.name}</button>`).join('') + '</div>';
+      `<button class="chip${i === idx ? ' on' : ''}" data-i="${i}" aria-current="${i === idx}">${q.name}</button>`).join('') + '</div>';
   }
 }
 document.getElementById('chips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if (!b) return;
-  const i = Number(b.dataset.i);
-  pinned = pinned === i ? null : i;
-  if (pinned == null) idx = i;
+  idx = Number(b.dataset.i);
   render();
+  start();   // 押した拠点から、また5秒ごとに切り替え
 });
-setInterval(() => {
-  if (MODE === 'list' || pinned != null) return;
-  const one = document.getElementById('one'); if (one) one.classList.add('fade');
-  setTimeout(() => { idx = (idx + 1) % PLACES.length; render(); }, 400);
-}, 5000);
+function start(){
+  clearInterval(timer);
+  if (MODE === 'list') return;
+  timer = setInterval(() => {
+    const one = document.getElementById('one'); if (one) one.classList.add('fade');
+    setTimeout(() => { idx = (idx + 1) % PLACES.length; render(); }, 400);
+  }, 5000);
+}
+start();
 load(); setInterval(load, 10 * 60 * 1000);
 </script>
 </body>
